@@ -1,0 +1,649 @@
+ALTER PROCEDURE [dbo].[sp_obi_gpr_red_bars_update]
+	@actual_year smallint
+  , @plan_year   smallint
+  , @last_year   smallint
+  , @month		 smallint
+AS
+BEGIN
+
+
+	BEGIN TRANSACTION
+
+		/***** 
+		   Remove data from current year and last year. Replace with updated data.
+		   Once data is inserted, asr will be added to cnv for months greater than current month
+		   Then the processed cnv/asr data will replace original source cnv data
+		******/
+
+		-- replace with new data
+
+		DELETE 
+		FROM [FDM].[dbo].[obi_gpr_red_bars]
+		WHERE year in (@actual_year, @last_year)
+
+		INSERT INTO [FDM].[dbo].[obi_gpr_red_bars]
+		SELECT [Area5Description]
+			  ,[Region]
+			  ,[Area3Description]
+			  ,Area2Description
+			  ,[Country]
+			  ,[Category5Description]
+			  ,[Category4Description]
+			  ,[account_type]
+			  ,[report_level_2]
+			  ,[report_level_3]
+			  ,[report_level_4]
+			  ,[report_level_5]
+			  ,[report_level_6]
+			  ,[Category3Description]
+			  ,[account]
+			  ,[account_description]
+			  ,[ServiceGroup]
+			  ,[Year]
+			  ,[act_pln]
+			  ,[jan]
+			  ,[feb]
+			  ,[mar]
+			  ,[apr]
+			  ,[may]
+			  ,[jun]
+			  ,[jul]
+			  ,[aug]
+			  ,[sep]
+			  ,[oct]
+			  ,[nov]
+			  ,[dec]
+		FROM [FDM].[dbo].[vw_obi_gpr_red_bars]
+		WHERE year in (@actual_year, @last_year)
+
+	COMMIT TRANSACTION
+		
+		-- begin cnv/asr processing
+		
+		IF OBJECT_ID('tempdb..#TEMP_CNV_LY') IS NOT NULL
+			DROP TABLE #TEMP_CNV_LY
+
+		IF OBJECT_ID('tempdb..#TEMP_CNV_PLAN') IS NOT NULL
+			DROP TABLE #TEMP_CNV_PLAN
+
+		-- Last Year CNV --
+		-- Get last year cnv data and append asr data to months after @month
+		-- 3 queries: cnv/asr line items joined, cnv data that does not exist in join,
+		-- and asr data that does not exist in join
+
+		SELECT * INTO #TEMP_CNV_LY
+		FROM(
+		SELECT cnv.[Area5Description]
+			  ,cnv.[Region]
+			  ,cnv.[Area3Description]
+			  ,cnv.[Area2Description]
+			  ,cnv.[Country]
+			  ,cnv.[Category5Description]
+			  ,cnv.[Category4Description]
+			  ,cnv.[account_type]
+			  ,cnv.[report_level_2]
+			  ,cnv.[report_level_3]
+			  ,cnv.[report_level_4]
+			  ,cnv.[report_level_5]
+			  ,cnv.[report_level_6]
+			  ,cnv.[Category3Description]
+			  ,cnv.[account]
+			  ,cnv.[account_description]
+			  ,cnv.[ServiceGroup]
+			  ,cnv.[Year]
+			  ,cnv.[act_pln]
+			  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+			  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+			  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+			  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+			  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+			  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+			  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+			  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+			  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+			  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+			  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+			  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+		  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+											AND cnv.ServiceGroup = asr.ServiceGroup
+											AND cnv.account = asr.account
+											AND cnv.Area2Description = asr.Area2Description
+											AND cnv.Area3Description = asr.Area3Description
+											AND cnv.Country = asr.Country
+											AND cnv.[Area5Description] = asr.Area5Description
+											AND cnv.[Region] = asr.Region
+											AND cnv.[Category5Description] = asr.[Category5Description]
+											AND cnv.[Category4Description] = asr.[Category4Description]
+											AND cnv.[Category3Description] = asr.[Category3Description]
+											AND cnv.[report_level_6] = asr.report_level_6
+											AND cnv.[report_level_5] = asr.report_level_5
+											AND cnv.[report_level_4] = asr.report_level_4
+											AND cnv.[report_level_3] = asr.report_level_3
+											AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									
+		  where cnv.act_pln = 2
+		  AND asr.act_pln = 0
+		  AND cnv.year = @last_year
+  
+		  UNION ALL
+
+			SELECT cnv.[Area5Description]
+			  ,cnv.[Region]
+			  ,cnv.[Area3Description]
+			  ,cnv.[Area2Description]
+			  ,cnv.[Country]
+			  ,cnv.[Category5Description]
+			  ,cnv.[Category4Description]
+			  ,cnv.[account_type]
+			  ,cnv.[report_level_2]
+			  ,cnv.[report_level_3]
+			  ,cnv.[report_level_4]
+			  ,cnv.[report_level_5]
+			  ,cnv.[report_level_6]
+			  ,cnv.[Category3Description]
+			  ,cnv.[account]
+			  ,cnv.[account_description]
+			  ,cnv.[ServiceGroup]
+			  ,cnv.[Year]
+			  ,cnv.[act_pln]
+			  ,cnv.[jan]
+			  ,cnv.[feb]
+			  ,cnv.[mar]
+			  ,cnv.[apr]
+			  ,cnv.[may]
+			  ,cnv.[jun]
+			  ,cnv.[jul]
+			  ,cnv.[aug]
+			  ,cnv.[sep]
+			  ,cnv.[oct]
+			  ,cnv.[nov]
+			  ,cnv.[dec]
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv							
+		  where cnv.act_pln = 2
+		  AND cnv.year = @last_year
+		  AND not exists 
+						(Select NULL
+						 FROM (
+									SELECT cnv.[Area5Description]
+										  ,cnv.[Region]
+										  ,cnv.[Area3Description]
+										  ,cnv.[Area2Description]
+										  ,cnv.[Country]
+										  ,cnv.[Category5Description]
+										  ,cnv.[Category4Description]
+										  ,cnv.[account_type]
+										  ,cnv.[report_level_2]
+										  ,cnv.[report_level_3]
+										  ,cnv.[report_level_4]
+										  ,cnv.[report_level_5]
+										  ,cnv.[report_level_6]
+										  ,cnv.[Category3Description]
+										  ,cnv.[account]
+										  ,cnv.[account_description]
+										  ,cnv.[ServiceGroup]
+										  ,cnv.[Year]
+										  ,cnv.[act_pln]
+										  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+										  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+										  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+										  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+										  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+										  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+										  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+										  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+										  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+										  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+										  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+										  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+									  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+									  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+																		AND cnv.ServiceGroup = asr.ServiceGroup
+																		AND cnv.account = asr.account
+																		AND cnv.Area2Description = asr.Area2Description
+																		AND cnv.Area3Description = asr.Area3Description
+																		AND cnv.Country = asr.Country
+																		AND cnv.[Area5Description] = asr.Area5Description
+																		AND cnv.[Region] = asr.Region
+																		AND cnv.[Category5Description] = asr.[Category5Description]
+																		AND cnv.[Category4Description] = asr.[Category4Description]
+																		AND cnv.[Category3Description] = asr.[Category3Description]
+																		AND cnv.[report_level_6] = asr.report_level_6
+																		AND cnv.[report_level_5] = asr.report_level_5
+																		AND cnv.[report_level_4] = asr.report_level_4
+																		AND cnv.[report_level_3] = asr.report_level_3
+																		AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									  where cnv.act_pln = 2
+									  AND asr.act_pln = 0
+									  AND cnv.year = @last_year) j
+						 where j.year = cnv.year
+							AND j.ServiceGroup = cnv.ServiceGroup
+							AND j.account = cnv.account
+							AND j.Area2Description = cnv.Area2Description
+							AND j.Area3Description = cnv.Area3Description
+							AND j.Country = cnv.Country
+		  )
+
+  
+		  UNION ALL
+
+		  SELECT asr.[Area5Description]
+			  ,asr.[Region]
+			  ,asr.[Area3Description]
+			  ,asr.[Area2Description]
+			  ,asr.[Country]
+			  ,asr.[Category5Description]
+			  ,asr.[Category4Description]
+			  ,asr.[account_type]
+			  ,asr.[report_level_2]
+			  ,asr.[report_level_3]
+			  ,asr.[report_level_4]
+			  ,asr.[report_level_5]
+			  ,asr.[report_level_6]
+			  ,asr.[Category3Description]
+			  ,asr.[account]
+			  ,asr.[account_description]
+			  ,asr.[ServiceGroup]
+			  ,asr.[Year]
+			  ,[act_pln] = 2
+			  ,jan = CASE WHEN @month >= 1 THEN 0 ELSE asr.[jan] END
+			  ,feb = CASE WHEN @month >= 2 THEN 0 ELSE asr.[feb] END
+			  ,mar = CASE WHEN @month >= 3 THEN 0 ELSE asr.[mar] END
+			  ,apr = CASE WHEN @month >= 4 THEN 0 ELSE asr.[apr] END
+			  ,may = CASE WHEN @month >= 5 THEN 0 ELSE asr.[may] END
+			  ,jun = CASE WHEN @month >= 6 THEN 0 ELSE asr.[jun] END
+			  ,jul = CASE WHEN @month >= 7 THEN 0 ELSE asr.[jul] END
+			  ,aug = CASE WHEN @month >= 8 THEN 0 ELSE asr.[aug] END
+			  ,sep = CASE WHEN @month >= 9 THEN 0 ELSE asr.[sep] END
+			  ,oct = CASE WHEN @month >= 10 THEN 0 ELSE asr.[oct] END
+			  ,nov = CASE WHEN @month >= 11 THEN 0 ELSE asr.[nov] END
+			  ,dec = CASE WHEN @month >= 12 THEN 0 ELSE asr.[dec] END
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] asr							
+		  where asr.act_pln = 0
+		  AND asr.year = @last_year
+		  AND not exists 
+						(Select NULL
+						 FROM (
+									SELECT cnv.[Area5Description]
+										  ,cnv.[Region]
+										  ,cnv.[Area3Description]
+										  ,cnv.[Area2Description]
+										  ,cnv.[Country]
+										  ,cnv.[Category5Description]
+										  ,cnv.[Category4Description]
+										  ,cnv.[account_type]
+										  ,cnv.[report_level_2]
+										  ,cnv.[report_level_3]
+										  ,cnv.[report_level_4]
+										  ,cnv.[report_level_5]
+										  ,cnv.[report_level_6]
+										  ,cnv.[Category3Description]
+										  ,cnv.[account]
+										  ,cnv.[account_description]
+										  ,cnv.[ServiceGroup]
+										  ,cnv.[Year]
+										  ,cnv.[act_pln]
+										  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+										  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+										  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+										  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+										  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+										  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+										  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+										  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+										  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+										  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+										  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+										  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+									  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+									  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+																		AND cnv.ServiceGroup = asr.ServiceGroup
+																		AND cnv.account = asr.account
+																		AND cnv.Area2Description = asr.Area2Description
+																		AND cnv.Area3Description = asr.Area3Description
+																		AND cnv.Country = asr.Country
+																		AND cnv.[Area5Description] = asr.Area5Description
+																		AND cnv.[Region] = asr.Region
+																		AND cnv.[Category5Description] = asr.[Category5Description]
+																		AND cnv.[Category4Description] = asr.[Category4Description]
+																		AND cnv.[Category3Description] = asr.[Category3Description]
+																		AND cnv.[report_level_6] = asr.report_level_6
+																		AND cnv.[report_level_5] = asr.report_level_5
+																		AND cnv.[report_level_4] = asr.report_level_4
+																		AND cnv.[report_level_3] = asr.report_level_3
+																		AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									
+									  where cnv.act_pln = 2
+									  AND asr.act_pln = 0
+									  AND cnv.year = 2016) j
+						 where j.year = asr.year
+							AND j.ServiceGroup = asr.ServiceGroup
+							AND j.account = asr.account
+							AND j.Area2Description = asr.Area2Description
+							AND j.Area3Description = asr.Area3Description
+							AND j.Country = asr.Country
+							AND j.region = asr.region
+							AND j.Category3Description = asr.Category3Description
+							AND j.Category4Description = asr.Category4Description
+							AND j.Category5Description = asr.Category5Description
+							AND j.[report_level_6] = asr.report_level_6
+							AND j.[report_level_5] = asr.report_level_5
+							AND j.[report_level_4] = asr.report_level_4
+							AND j.[report_level_3] = asr.report_level_3
+							AND j.[report_level_2] = asr.[report_level_2]
+		  )
+		) qry
+
+
+		-- PLAN CNV --
+		-- Get plan year cnv data and append asr data to months after @month
+		-- 3 queries: cnv/asr line items joined, cnv data that does not exist in join,
+		-- and asr data that does not exist in join
+
+
+
+		SELECT * INTO #TEMP_CNV_PLAN
+		FROM(
+		SELECT cnv.[Area5Description]
+			  ,cnv.[Region]
+			  ,cnv.[Area3Description]
+			  ,cnv.[Area2Description]
+			  ,cnv.[Country]
+			  ,cnv.[Category5Description]
+			  ,cnv.[Category4Description]
+			  ,cnv.[account_type]
+			  ,cnv.[report_level_2]
+			  ,cnv.[report_level_3]
+			  ,cnv.[report_level_4]
+			  ,cnv.[report_level_5]
+			  ,cnv.[report_level_6]
+			  ,cnv.[Category3Description]
+			  ,cnv.[account]
+			  ,cnv.[account_description]
+			  ,cnv.[ServiceGroup]
+			  ,cnv.[Year]
+			  ,cnv.[act_pln]
+			  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+			  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+			  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+			  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+			  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+			  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+		 	  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+			  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+			  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+			  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+			  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+			  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+		  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+											AND cnv.ServiceGroup = asr.ServiceGroup
+											AND cnv.account = asr.account
+											AND cnv.Area2Description = asr.Area2Description
+											AND cnv.Area3Description = asr.Area3Description
+											AND cnv.Country = asr.Country
+											AND cnv.[Area5Description] = asr.Area5Description
+											AND cnv.[Region] = asr.Region
+											AND cnv.[Category5Description] = asr.[Category5Description]
+											AND cnv.[Category4Description] = asr.[Category4Description]
+											AND cnv.[Category3Description] = asr.[Category3Description]
+											AND cnv.[report_level_6] = asr.report_level_6
+											AND cnv.[report_level_5] = asr.report_level_5
+											AND cnv.[report_level_4] = asr.report_level_4
+											AND cnv.[report_level_3] = asr.report_level_3
+											AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									
+		  where cnv.act_pln = 3
+		  AND asr.act_pln = 1
+		  AND cnv.year = @plan_year
+  
+		  UNION ALL
+
+			SELECT cnv.[Area5Description]
+			  ,cnv.[Region]
+			  ,cnv.[Area3Description]
+			  ,cnv.[Area2Description]
+			  ,cnv.[Country]
+			  ,cnv.[Category5Description]
+			  ,cnv.[Category4Description]
+			  ,cnv.[account_type]
+			  ,cnv.[report_level_2]
+			  ,cnv.[report_level_3]
+			  ,cnv.[report_level_4]
+			  ,cnv.[report_level_5]
+			  ,cnv.[report_level_6]
+			  ,cnv.[Category3Description]
+			  ,cnv.[account]
+			  ,cnv.[account_description]
+			  ,cnv.[ServiceGroup]
+			  ,cnv.[Year]
+			  ,cnv.[act_pln]
+			  ,cnv.[jan]
+			  ,cnv.[feb]
+			  ,cnv.[mar]
+			  ,cnv.[apr]
+			  ,cnv.[may]
+			  ,cnv.[jun]
+			  ,cnv.[jul]
+			  ,cnv.[aug]
+			  ,cnv.[sep]
+			  ,cnv.[oct]
+			  ,cnv.[nov]
+			  ,cnv.[dec]
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv							
+		  where cnv.act_pln = 3
+		  AND cnv.year = 2017
+		  AND not exists 
+						(Select NULL
+						 FROM (
+									SELECT cnv.[Area5Description]
+										  ,cnv.[Region]
+										  ,cnv.[Area3Description]
+										  ,cnv.[Area2Description]
+										  ,cnv.[Country]
+										  ,cnv.[Category5Description]
+										  ,cnv.[Category4Description]
+										  ,cnv.[account_type]
+										  ,cnv.[report_level_2]
+										  ,cnv.[report_level_3]
+										  ,cnv.[report_level_4]
+										  ,cnv.[report_level_5]
+										  ,cnv.[report_level_6]
+										  ,cnv.[Category3Description]
+										  ,cnv.[account]
+										  ,cnv.[account_description]
+										  ,cnv.[ServiceGroup]
+										  ,cnv.[Year]
+										  ,cnv.[act_pln]
+										  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+										  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+										  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+										  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+										  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+										  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+										  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+										  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+										  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+										  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+										  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+										  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+									  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+									  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+																		AND cnv.ServiceGroup = asr.ServiceGroup
+																		AND cnv.account = asr.account
+																		AND cnv.Area2Description = asr.Area2Description
+																		AND cnv.Area3Description = asr.Area3Description
+																		AND cnv.Country = asr.Country
+																		AND cnv.[Area5Description] = asr.Area5Description
+																		AND cnv.[Region] = asr.Region
+																		AND cnv.[Category5Description] = asr.[Category5Description]
+																		AND cnv.[Category4Description] = asr.[Category4Description]
+																		AND cnv.[Category3Description] = asr.[Category3Description]
+																		AND cnv.[report_level_6] = asr.report_level_6
+																		AND cnv.[report_level_5] = asr.report_level_5
+																		AND cnv.[report_level_4] = asr.report_level_4
+																		AND cnv.[report_level_3] = asr.report_level_3
+																		AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									  where cnv.act_pln = 3
+									  AND asr.act_pln = 1
+									  AND cnv.year = @plan_year) j
+						 where j.year = cnv.year
+							AND j.ServiceGroup = cnv.ServiceGroup
+							AND j.account = cnv.account
+							AND j.Area2Description = cnv.Area2Description
+							AND j.Area3Description = cnv.Area3Description
+							AND j.Country = cnv.Country
+		  )
+
+  
+		  UNION ALL
+
+		  SELECT asr.[Area5Description]
+			  ,asr.[Region]
+			  ,asr.[Area3Description]
+			  ,asr.[Area2Description]
+			  ,asr.[Country]
+			  ,asr.[Category5Description]
+			  ,asr.[Category4Description]
+			  ,asr.[account_type]
+			  ,asr.[report_level_2]
+			  ,asr.[report_level_3]
+			  ,asr.[report_level_4]
+			  ,asr.[report_level_5]
+			  ,asr.[report_level_6]
+			  ,asr.[Category3Description]
+			  ,asr.[account]
+			  ,asr.[account_description]
+			  ,asr.[ServiceGroup]
+			  ,asr.[Year]
+			  ,[act_pln] = 3
+			  ,jan = CASE WHEN @month >= 1 THEN 0 ELSE asr.[jan] END
+			  ,feb = CASE WHEN @month >= 2 THEN 0 ELSE asr.[feb] END
+			  ,mar = CASE WHEN @month >= 3 THEN 0 ELSE asr.[mar] END
+			  ,apr = CASE WHEN @month >= 4 THEN 0 ELSE asr.[apr] END
+			  ,may = CASE WHEN @month >= 5 THEN 0 ELSE asr.[may] END
+			  ,jun = CASE WHEN @month >= 6 THEN 0 ELSE asr.[jun] END
+			  ,jul = CASE WHEN @month >= 7 THEN 0 ELSE asr.[jul] END
+			  ,aug = CASE WHEN @month >= 8 THEN 0 ELSE asr.[aug] END
+			  ,sep = CASE WHEN @month >= 9 THEN 0 ELSE asr.[sep] END
+			  ,oct = CASE WHEN @month >= 10 THEN 0 ELSE asr.[oct] END
+			  ,nov = CASE WHEN @month >= 11 THEN 0 ELSE asr.[nov] END
+			  ,dec = CASE WHEN @month >= 12 THEN 0 ELSE asr.[dec] END
+		  FROM [FDM].[dbo].[obi_gpr_red_bars] asr							
+		  where asr.act_pln = 1
+		  AND asr.year = @plan_year
+		  AND not exists 
+						(Select NULL
+						 FROM (
+									SELECT cnv.[Area5Description]
+										  ,cnv.[Region]
+										  ,cnv.[Area3Description]
+										  ,cnv.[Area2Description]
+										  ,cnv.[Country]
+										  ,cnv.[Category5Description]
+										  ,cnv.[Category4Description]
+										  ,cnv.[account_type]
+										  ,cnv.[report_level_2]
+										  ,cnv.[report_level_3]
+										  ,cnv.[report_level_4]
+										  ,cnv.[report_level_5]
+										  ,cnv.[report_level_6]
+										  ,cnv.[Category3Description]
+										  ,cnv.[account]
+										  ,cnv.[account_description]
+										  ,cnv.[ServiceGroup]
+										  ,cnv.[Year]
+										  ,cnv.[act_pln]
+										  ,jan = CASE WHEN @month >= 1 THEN cnv.[jan] ELSE asr.[jan] END 
+										  ,feb = CASE WHEN @month >= 2 THEN cnv.[feb] ELSE asr.[feb] END 
+										  ,mar = CASE WHEN @month >= 3 THEN cnv.[mar] ELSE asr.[mar] END 
+										  ,apr = CASE WHEN @month >= 4 THEN cnv.[apr] ELSE asr.[apr] END
+										  ,may = CASE WHEN @month >= 5 THEN cnv.[may] ELSE asr.[may] END
+										  ,jun = CASE WHEN @month >= 6 THEN cnv.[jun] ELSE asr.[jun] END
+										  ,jul = CASE WHEN @month >= 7 THEN cnv.[jul] ELSE asr.[jul] END
+										  ,aug = CASE WHEN @month >= 8 THEN cnv.[aug] ELSE asr.[aug] END
+										  ,sep = CASE WHEN @month >= 9 THEN cnv.[sep] ELSE asr.[sep] END
+										  ,oct = CASE WHEN @month >= 10 THEN cnv.[oct] ELSE asr.[oct] END
+										  ,nov = CASE WHEN @month >= 11 THEN cnv.[nov] ELSE asr.[nov] END
+										  ,dec = CASE WHEN @month >= 12 THEN cnv.[dec] ELSE asr.[dec] END
+									  FROM [FDM].[dbo].[obi_gpr_red_bars] cnv
+									  LEFT JOIN FDM.dbo.obi_gpr_red_bars asr ON cnv.year = asr.year
+																		AND cnv.ServiceGroup = asr.ServiceGroup
+																		AND cnv.account = asr.account
+																		AND cnv.Area2Description = asr.Area2Description
+																		AND cnv.Area3Description = asr.Area3Description
+																		AND cnv.Country = asr.Country
+																		AND cnv.[Area5Description] = asr.Area5Description
+																		AND cnv.[Region] = asr.Region
+																		AND cnv.[Category5Description] = asr.[Category5Description]
+																		AND cnv.[Category4Description] = asr.[Category4Description]
+																		AND cnv.[Category3Description] = asr.[Category3Description]
+																		AND cnv.[report_level_6] = asr.report_level_6
+																		AND cnv.[report_level_5] = asr.report_level_5
+																		AND cnv.[report_level_4] = asr.report_level_4
+																		AND cnv.[report_level_3] = asr.report_level_3
+																		AND cnv.[report_level_2] = asr.[report_level_2]
+									
+									
+									  where cnv.act_pln = 3
+									  AND asr.act_pln = 1
+									  AND cnv.year = @plan_year) j
+						 where j.year = asr.year
+							AND j.ServiceGroup = asr.ServiceGroup
+							AND j.account = asr.account
+							AND j.Area2Description = asr.Area2Description
+							AND j.Area3Description = asr.Area3Description
+							AND j.Country = asr.Country
+							AND j.region = asr.region
+							AND j.Category3Description = asr.Category3Description
+							AND j.Category4Description = asr.Category4Description
+							AND j.Category5Description = asr.Category5Description
+							AND j.[report_level_6] = asr.report_level_6
+							AND j.[report_level_5] = asr.report_level_5
+							AND j.[report_level_4] = asr.report_level_4
+							AND j.[report_level_3] = asr.report_level_3
+							AND j.[report_level_2] = asr.[report_level_2]
+		  )
+		) qry
+
+	BEGIN TRANSACTION
+
+		-- remove cnv data and replace with processed cnv/asr data
+		
+		-- CNV LY
+		DELETE 
+		FROM [FDM].[dbo].[obi_gpr_red_bars]
+		WHERE year = @last_year
+		AND act_pln = 2
+		
+		INSERT INTO FDM.dbo.obi_gpr_red_bars
+		SELECT *
+		FROM #TEMP_CNV_LY
+	
+		-- CNV PLAN
+		DELETE 
+		FROM [FDM].[dbo].[obi_gpr_red_bars]
+		WHERE year = @plan_year
+		AND act_pln = 3
+		
+		INSERT INTO FDM.dbo.obi_gpr_red_bars
+		SELECT *
+		FROM #TEMP_CNV_PLAN
+		
+	COMMIT TRANSACTION
+END
+
+
+
+
+
+
+
+GO
+
+
